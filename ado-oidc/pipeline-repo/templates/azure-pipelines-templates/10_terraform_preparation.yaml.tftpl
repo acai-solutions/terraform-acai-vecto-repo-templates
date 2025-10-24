@@ -1,0 +1,118 @@
+parameters:
+  - name: tfVersion
+    type: string
+
+stages:
+  - stage: TerraformPreparation
+    displayName: "Terraform AWS-Side Preparation"
+    pool: ${ado_agent_pool_name}
+    jobs:
+    - job: Preparation
+      displayName: "Terraform Init, Validate & Plan"
+      steps:
+      - bash: |
+          apt-get install zip
+          apt-get install unzip
+          echo "Registering tokens for Git Repos"
+          git version
+          rm ~/.gitconfig
+          rm .git/config
+          echo "Length of ADO_ACCESS_1: $${#ADO_ACCESS_1}"
+          echo "Length of GITHUB_ACCESS_1: $${#GITHUB_ACCESS_1}"
+          git config --global url."https://$${ADO_ACCESS_1}@dev.azure.com/acai-consulting/".insteadOf "https://dev.azure.com/acai-consulting/"
+          git config --global url."https://$${GITHUB_ACCESS_1}@github.com/acai-consulting/".insteadOf "https://github.com/acai-consulting/"
+        displayName: "Preparint the Agent - Installing zip, unzip, registering tokens for ADO"
+        env:
+          ADO_ACCESS_1: $(ADO_PAT-ACCESS_1)
+          GITHUB_ACCESS_1: $(GITHUB_PAT-ACCESS_1)
+
+      - checkout: self
+        persistCredentials: true
+
+      - task: AWSShellScript@1
+        inputs:
+          awsCredentials: "${ado_oidc_service_endpoint_name}"
+          scriptType: "inline"
+          inlineScript: |
+            ASSUMED_LEVEL0_ROLE=$(aws sts assume-role \
+              --role-arn  ${aws_execution_role_arn}  \
+              --external-id $(AWS_CICD_PROVISIONING_ROLE_EXTERNAL_ID) \
+              --role-session-name provisioning \
+              --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' \
+              --output text)
+
+            # Check if the assume-role was successful
+            if [ $? -eq 0 ]; then
+              # Read the credentials into separate variables
+              read ASSUMED_ACCESS_KEY_ID ASSUMED_SECRET_ACCESS_KEY ASSUMED_SESSION_TOKEN <<< "$ASSUMED_LEVEL0_ROLE"
+
+              echo "##vso[task.setvariable variable=AWS.AccessKeyID]$ASSUMED_ACCESS_KEY_ID"
+              echo "##vso[task.setvariable variable=AWS.SecretAccessKey]$ASSUMED_SECRET_ACCESS_KEY"
+              echo "##vso[task.setvariable variable=AWS.SessionToken]$ASSUMED_SESSION_TOKEN" 
+              echo "##vso[task.setvariable variable=AWS.Region]${aws_default_region}"
+              echo "Assumed role: $ASSUMED_ACCESS_KEY_ID"
+              echo "Assumed role: ${aws_execution_role_arn}"
+            else
+                echo "Failed to assume role ${aws_execution_role_arn}"
+                exit 1
+            fi     
+
+      - task: TerraformInstaller@1
+        inputs:
+          terraformVersion: $${{ parameters.tfVersion }}
+
+      - task: AWSShellScript@1
+        displayName: "Run Terraform Init & Validate"
+        inputs:
+          scriptType: "inline"
+          inlineScript: |
+            cd terraform 
+            terraform init 
+            terraform validate
+
+      - script: |
+          cd terraform
+          ORG_NAME=$(echo "$(System.TeamFoundationCollectionUri)" | awk -F'/' '{print $(NF-1)}') # This is an example and might need adjustment
+          cat > pipeline.tfvars.json <<EOF
+          {
+            "cicd_metadata": {
+              "cicd_ado_organization": "$${ORG_NAME}",
+              "cicd_ado_project_name": "$(System.TeamProject)",
+              "cicd_pipeline_name": "$(Build.DefinitionName)"
+            }
+          }
+          EOF
+        displayName: 'Generate TFVars with CICD-Tags'
+          
+      - task: AWSShellScript@1
+        displayName: "Run Terraform Plan"
+        inputs:
+          regionName: "eu-central-1"
+          scriptType: "inline"
+          continueOnError: false
+          inlineScript: |
+            cd terraform 
+            terraform plan --out=terraform.tfplan -var-file=pipeline.tfvars.json
+            PLAN_EXIT_CODE=$?
+            if [ $PLAN_EXIT_CODE -ne 0 ]; then
+                exit $PLAN_EXIT_CODE
+            fi
+            terraform show terraform.tfplan > terraform.tfplan.show
+
+      - task: PublishPipelineArtifact@1 
+        displayName: Publish artefact terraform.tfplan.show
+        inputs: 
+          targetPath: 'terraform/terraform.tfplan.show' 
+          artifactName: 'terraform.tfplan.show'
+
+      - bash: |
+          cd $(System.DefaultWorkingDirectory)
+          zip -r terraform_folder.zip ./terraform/
+          ls
+        displayName: Zip terraform folder
+
+      - task: PublishPipelineArtifact@1 
+        displayName: Publish artefact terraform_folder.zip
+        inputs: 
+          targetPath: 'terraform_folder.zip' 
+          artifactName: 'terraform_folder.zip'

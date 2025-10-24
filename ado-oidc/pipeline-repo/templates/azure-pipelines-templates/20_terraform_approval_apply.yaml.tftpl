@@ -1,0 +1,100 @@
+parameters:
+  - name: tfVersion
+    type: string
+  - name: releaseBranch
+    type: string
+
+stages:
+  - stage: TerraformApproveAndApply
+    displayName: "Terraform AWS-Side Approve & Apply"
+    pool: ${ado_agent_pool_name}
+    dependsOn:
+      - TerraformPreparation
+    jobs:
+    - job: TerraformShow
+      displayName: "Terraform Show Plan"
+      steps:
+      - checkout: none
+      - task: DownloadPipelineArtifact@2 
+        displayName: "Download artifact terraform.tfplan.show"
+        inputs: 
+          buildType: current
+          artifactName: terraform.tfplan.show
+          targetPath: terraform 
+
+      - bash: |
+          cd terraform 
+          echo "Show Terraform Plan"
+          cat terraform.tfplan.show 
+        displayName: Show terraform plan
+
+    - job: waitForValidation
+      displayName: Wait for manual approval
+      condition: eq(variables['Build.SourceBranchName'], variables['TF_APPLY_BRANCH'])
+      dependsOn: "TerraformShow"
+      pool: server    
+      timeoutInMinutes: "4320" # job times out in 3 days
+      steps:   
+      - task: ManualValidation@0
+        timeoutInMinutes: 1440  # task times out in 1 day
+        inputs:
+            instructions: 'Please validate the build configuration and resume'
+            onTimeout: 'reject'
+
+    - job: TerraformApply
+      displayName: "Terraform Apply"
+      condition:  |
+          and(
+            succeeded('waitForValidation'),
+            eq(variables['Build.SourceBranchName'], variables['TF_APPLY_BRANCH'])
+          )
+      dependsOn: "waitForValidation"
+      steps:
+      - checkout: self
+        persistCredentials: true
+
+      - task: DownloadPipelineArtifact@2 
+        displayName: "Download artifact terraform_folder.zip"
+        inputs: 
+          buildType: 'current' 
+          artifactName: 'terraform_folder.zip' 
+          targetPath: '.'
+
+      - bash: |
+          cd $(System.DefaultWorkingDirectory)
+          rm -rf terraform 
+          unzip terraform_folder.zip 
+        displayName: Unzip terraform folder
+        
+      - task: AWSShellScript@1
+        inputs:
+%{ if ado_oidc_service_endpoint_name != "" ~}
+          awsCredentials: "${ado_oidc_service_endpoint_name}"
+%{ endif ~}
+          scriptType: "inline"
+          inlineScript: |
+            export $(printf "AWS_ACCESS_KEY_ID=%s AWS_SECRET_ACCESS_KEY=%s AWS_SESSION_TOKEN=%s" \
+              $(aws sts assume-role \
+                --role-arn  ${aws_execution_role_arn}  \
+                --external-id $(AWS_CICD_PROVISIONING_ROLE_EXTERNAL_ID) \
+                --role-session-name provisioning \
+                --query "Credentials.[AccessKeyId,SecretAccessKey,SessionToken]" \
+                --output text))
+            echo "##vso[task.setvariable variable=AWS.AccessKeyID]$AWS_ACCESS_KEY_ID"
+            echo "##vso[task.setvariable variable=AWS.SecretAccessKey]$AWS_SECRET_ACCESS_KEY"
+            echo "##vso[task.setvariable variable=AWS.SessionToken]$AWS_SESSION_TOKEN" 
+              echo "##vso[task.setvariable variable=AWS.Region]${aws_default_region}"
+            echo "Assumed role: $AWS_ACCESS_KEY_ID"
+            echo "Assumed role: ${aws_execution_role_arn}"
+
+      - task: TerraformInstaller@1
+        inputs:
+          terraformVersion: $${{ parameters.tfVersion }}
+
+      - task: AWSShellScript@1
+        displayName: "Run Terraform apply"
+        inputs:
+          scriptType: "inline"
+          inlineScript: |
+            cd terraform 
+            terraform apply --auto-approve terraform.tfplan

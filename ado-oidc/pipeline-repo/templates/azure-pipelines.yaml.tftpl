@@ -1,0 +1,20 @@
+parameters:
+  - name: tf_version
+    type: string
+    default: ${tf_version}
+
+variables:
+  - group: REPO_ACCESS_TOKEN
+
+trigger:
+  - ${release_branch}
+
+stages:
+  - template: azure-pipelines-templates/10_terraform_preparation.yaml
+    parameters:
+      tfVersion: $${{ parameters.tf_version }}
+
+  - template: azure-pipelines-templates/20_terraform_approval_apply.yaml
+    parameters:
+      tfVersion: $${{ parameters.tf_version }}
+      releaseBranch: ${release_branch}
