@@ -1,7 +1,7 @@
 # License – VECTO
 
 **Effective Date:** September 03, 2025  
-**Authoritative Version:** German
+**Authoritative Version:** [German](./lizenz.md)
 
 The contents of this repository are proprietary and confidential. Use is permitted solely on the basis of a valid contractual agreement between ACAI GmbH (“ACAI”) and a licensee.
 
