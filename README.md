@@ -29,4 +29,5 @@ See [LICENSE][license-url] for full details.
 
 <!-- MARKDOWN LINKS & IMAGES -->
 [acai-shield]: https://img.shields.io/badge/maintained_by-acai.gmbh-CB224B?style=flat
+[acai-url]: https://acai.gmbh
 [license-url]: ./LICENSE.md
