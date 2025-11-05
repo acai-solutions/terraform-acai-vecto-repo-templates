@@ -12,7 +12,6 @@ Templates for the VECTO pipeline repositories
 See the [ACAI documentation](https://docs.acai.gmbh/solution-vecto/10_overview/) or [ACAI website](https://acai.gmbh/solutions/vecto/) for further info.
 
 
-
 <!-- AUTHORS -->
 ## Authors
 
