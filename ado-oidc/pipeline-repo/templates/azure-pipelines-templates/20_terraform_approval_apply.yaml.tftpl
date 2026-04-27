@@ -109,3 +109,13 @@ stages:
           inlineScript: |
             cd terraform 
             terraform apply --auto-approve terraform.tfplan
+
+      - bash: |
+          git config --global --unset-all http.https://dev.azure.com/${ado_project_name}/.extraheader || true
+          git config --global --get-regexp '^url\..*dev\.azure\.com/${ado_project_name}/.*insteadOf$' | awk '{print $1}' | xargs -r -I{} git config --global --unset-all "{}" || true
+%{ for entry in jsondecode(pat_repo_access) ~}
+          git config --global --get-regexp '^url\..*dev\.azure\.com/${entry.repo_domain}/.*insteadOf$' | awk '{print $1}' | xargs -r -I{} git config --global --unset-all "{}" || true
+%{ endfor ~}
+        displayName: "Cleanup Git credential headers"
+        condition: always()
+

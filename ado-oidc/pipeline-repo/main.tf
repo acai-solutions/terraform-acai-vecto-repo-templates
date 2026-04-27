@@ -22,8 +22,9 @@ terraform {
 data "template_file" "azure_pipelines_yaml" {
   template = file("${path.module}/templates/azure-pipelines.yaml.tftpl")
   vars = {
-    tf_version     = regex("\\d+\\.\\d+\\.\\d+", var.pipeline_settings.tf_version)
-    release_branch = var.global_settings.ado_repo_release_branch
+    tf_version      = regex("\\d+\\.\\d+\\.\\d+", var.pipeline_settings.tf_version)
+    release_branch  = var.global_settings.ado_repo_release_branch
+    variable_groups = jsonencode([for entry in var.global_settings.ado_repo_access_via_pat : entry.variable_group_name])
   }
 }
 
@@ -37,6 +38,8 @@ data "template_file" "terraform_preparation_yml" {
     ado_oidc_service_endpoint_name = var.global_settings.ado_oidc_service_endpoint_name
     aws_default_region             = var.global_settings.aws_default_region
     aws_execution_role_arn         = var.pipeline_settings.pipeline_principal_arn
+    ado_project_name               = var.global_settings.ado_project_name
+    pat_repo_access                = jsonencode([for entry in var.global_settings.ado_repo_access_via_pat : entry.repo_access])
   }
 }
 
@@ -50,6 +53,8 @@ data "template_file" "terraform_approval_apply_yml" {
     ado_oidc_service_endpoint_name = var.global_settings.ado_oidc_service_endpoint_name
     aws_default_region             = var.global_settings.aws_default_region
     aws_execution_role_arn         = var.pipeline_settings.pipeline_principal_arn
+    ado_project_name               = var.global_settings.ado_project_name
+    pat_repo_access                = jsonencode([for entry in var.global_settings.ado_repo_access_via_pat : entry.repo_access])
   }
 }
 

@@ -21,24 +21,35 @@ stages:
     - job: Preparation
       displayName: "Terraform Init, Validate & Plan"
       steps:
+      - checkout: self
+        persistCredentials: true
+
       - bash: |
           apt-get install zip
           apt-get install unzip
           echo "Registering tokens for Git Repos"
           git version
-          rm ~/.gitconfig
-          rm .git/config
-          echo "Length of ADO_ACCESS_1: $${#ADO_ACCESS_1}"
-          echo "Length of GITHUB_ACCESS_1: $${#GITHUB_ACCESS_1}"
-          git config --global url."https://$${ADO_ACCESS_1}@dev.azure.com/acai-consulting/".insteadOf "https://dev.azure.com/acai-consulting/"
-          git config --global url."https://$${GITHUB_ACCESS_1}@github.com/acai-consulting/".insteadOf "https://github.com/acai-consulting/"
-        displayName: "Preparint the Agent - Installing zip, unzip, registering tokens for ADO"
-        env:
-          ADO_ACCESS_1: $(ADO_PAT-ACCESS_1)
-          GITHUB_ACCESS_1: $(GITHUB_PAT-ACCESS_1)
+          if [ -z "$${SYSTEM_ACCESSTOKEN:-}" ]; then
+            echo "SYSTEM_ACCESSTOKEN is not set. Enable OAuth token access for scripts."
+            exit 1
+          fi
+          AUTH_HEADER=$(printf ":%s" "$${SYSTEM_ACCESSTOKEN}" | base64 | tr -d '\n')
+          git config --global --get-regexp '^url\..*dev\.azure\.com/${ado_project_name}/.*insteadOf$' | awk '{print $1}' | xargs -r -I{} git config --global --unset-all "{}" || true
+          git config --global --unset-all http.https://dev.azure.com/${ado_project_name}/.extraheader || true
+          git config --global http.https://dev.azure.com/${ado_project_name}/.extraheader "AUTHORIZATION: Basic $${AUTH_HEADER}"
 
-      - checkout: self
-        persistCredentials: true
+          # Register PAT-based git credentials for cross-repo access
+%{ for entry in jsondecode(pat_repo_access) ~}
+          git config --global url."https://$${REPO_ACCESS_${entry.pat_variable_name}}@dev.azure.com/${entry.repo_domain}/".insteadOf "https://dev.azure.com/${entry.repo_domain}/"
+%{ endfor ~}
+
+        displayName: "Preparing the Agent - Installing zip, unzip, registering tokens for ADO"
+        env:
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+%{ for entry in jsondecode(pat_repo_access) ~}
+          REPO_ACCESS_${entry.pat_variable_name}: $(${entry.pat_variable_name})
+%{ endfor ~}
+
 
       - task: AWSShellScript@1
         inputs:
@@ -127,3 +138,18 @@ stages:
         inputs: 
           targetPath: 'terraform_folder.zip' 
           artifactName: 'terraform_folder.zip'
+
+      - bash: |
+          git config --global --unset-all http.https://dev.azure.com/${ado_project_name}/.extraheader || true
+          git config --global --get-regexp '^url\..*dev\.azure\.com/${ado_project_name}/.*insteadOf$' | awk '{print $1}' | xargs -r -I{} git config --global --unset-all "{}" || true
+%{ for entry in jsondecode(pat_repo_access) ~}
+          git config --global --unset-all url."https://$${REPO_ACCESS_${entry.pat_variable_name}}@dev.azure.com/${entry.repo_domain}/".insteadOf || true
+          git config --global --get-regexp '^url\..*dev\.azure\.com/${entry.repo_domain}/.*insteadOf$' | awk '{print $1}' | xargs -r -I{} git config --global --unset-all "{}" || true
+%{ endfor ~}
+        displayName: "Cleanup Git credential headers"
+        condition: always()
+        env:
+%{ for entry in jsondecode(pat_repo_access) ~}
+          REPO_ACCESS_${entry.pat_variable_name}: $(${entry.pat_variable_name})
+%{ endfor ~}
+
