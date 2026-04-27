@@ -91,10 +91,10 @@ stages:
                 --role-session-name provisioning \
                 --query "Credentials.[AccessKeyId,SecretAccessKey,SessionToken]" \
                 --output text))
-            echo "##vso[task.setvariable variable=AWS.AccessKeyID]$AWS_ACCESS_KEY_ID"
-            echo "##vso[task.setvariable variable=AWS.SecretAccessKey]$AWS_SECRET_ACCESS_KEY"
-            echo "##vso[task.setvariable variable=AWS.SessionToken]$AWS_SESSION_TOKEN" 
-              echo "##vso[task.setvariable variable=AWS.Region]${aws_default_region}"
+            echo "##vso[task.setvariable variable=AWS.AccessKeyID;issecret=true]$AWS_ACCESS_KEY_ID"
+            echo "##vso[task.setvariable variable=AWS.SecretAccessKey;issecret=true]$AWS_SECRET_ACCESS_KEY"
+            echo "##vso[task.setvariable variable=AWS.SessionToken;issecret=true]$AWS_SESSION_TOKEN" 
+            echo "##vso[task.setvariable variable=AWS.Region]${aws_default_region}"
             echo "Assumed role: $AWS_ACCESS_KEY_ID"
             echo "Assumed role: ${aws_execution_role_arn}"
 
@@ -107,5 +107,41 @@ stages:
         inputs:
           scriptType: "inline"
           inlineScript: |
-            cd terraform 
+            cd terraform
+            # Re-run init defensively: the unzipped artifact already contains
+            # .terraform/ from stage 10, so this is a fast no-op for providers
+            # and modules, but it re-validates the backend and protects against
+            # agent OS/arch drift between plan and apply.
+            terraform init -input=false
             terraform apply --auto-approve terraform.tfplan
+
+      # ---------------------------------------------------------------------
+      # Cleanup git credential state on the agent.
+      #
+      # Why this matters:
+      #   On self-hosted / persistent agents, $HOME/.gitconfig survives across
+      #   pipeline runs. Any 'http.<url>.extraheader' (set by checkout with
+      #   persistCredentials=true) or 'url.<...>.insteadOf' rewrites containing
+      #   tokens would leak to subsequent jobs on the same agent.
+      #   On Microsoft-hosted agents the VM is ephemeral, so this is defensive
+      #   only — but cheap, idempotent, and runs unconditionally.
+      #
+      # Scope cleaned here:
+      #   1. extraheader for the ADO project this pipeline runs in
+      #      (set implicitly by 'checkout: self' + persistCredentials).
+      #   2. Any insteadOf rewrites targeting the ADO project's domain.
+      #   3. Any insteadOf rewrites targeting cross-org domains used by
+      #      PAT-based repo access (set in stage 10; cleaned here as a
+      #      safety net in case stage 10 didn't reach its own cleanup).
+      # ---------------------------------------------------------------------
+      - bash: |
+          set +e  # never fail the pipeline on cleanup errors
+          git config --global --unset-all http.https://dev.azure.com/${ado_project_name}/.extraheader || true
+          git config --global --get-regexp '^url\..*dev\.azure\.com/${ado_project_name}/.*insteadOf$' | awk '{print $1}' | xargs -r -I{} git config --global --unset-all "{}" || true
+%{ for entry in jsondecode(pat_repo_access) ~}
+          # Cleanup PAT-based insteadOf for ${entry.repo_domain} (registered in stage 10)
+          git config --global --get-regexp '^url\..*dev\.azure\.com/${entry.repo_domain}/.*insteadOf$' | awk '{print $1}' | xargs -r -I{} git config --global --unset-all "{}" || true
+%{ endfor ~}
+        displayName: "Cleanup Git credential headers"
+        condition: always()
+

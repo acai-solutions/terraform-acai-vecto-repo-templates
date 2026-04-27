@@ -16,6 +16,14 @@ variable "ado_pipeline_repos_settings" {
       ado_repo_release_branch        = string
       ado_agent_pool_name            = string
       ado_oidc_service_endpoint_name = string
+      ado_project_name               = string
+      ado_repo_access_via_pat = optional(list(object({
+        variable_group_name = string
+        repo_access = object({
+          repo_domain       = string
+          pat_variable_name = string
+        })
+      })), [])
       aws_tf_state_bucket_region     = string
       aws_tf_state_bucket_name       = string
       aws_default_region             = optional(string, "eu-central-1")

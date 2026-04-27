@@ -15,7 +15,9 @@ parameters:
     default: ${tf_version}
 
 variables:
-  - group: REPO_ACCESS_TOKEN
+%{ for vg in jsondecode(variable_groups) ~}
+  - group: ${vg}
+%{ endfor ~}
 
 trigger:
   - ${release_branch}
