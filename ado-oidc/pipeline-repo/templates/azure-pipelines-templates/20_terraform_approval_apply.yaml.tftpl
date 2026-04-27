@@ -107,7 +107,12 @@ stages:
         inputs:
           scriptType: "inline"
           inlineScript: |
-            cd terraform 
+            cd terraform
+            # Re-run init defensively: the unzipped artifact already contains
+            # .terraform/ from stage 10, so this is a fast no-op for providers
+            # and modules, but it re-validates the backend and protects against
+            # agent OS/arch drift between plan and apply.
+            terraform init -input=false
             terraform apply --auto-approve terraform.tfplan
 
       # ---------------------------------------------------------------------
