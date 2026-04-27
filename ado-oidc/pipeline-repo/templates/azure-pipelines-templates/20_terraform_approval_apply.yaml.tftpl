@@ -91,10 +91,10 @@ stages:
                 --role-session-name provisioning \
                 --query "Credentials.[AccessKeyId,SecretAccessKey,SessionToken]" \
                 --output text))
-            echo "##vso[task.setvariable variable=AWS.AccessKeyID]$AWS_ACCESS_KEY_ID"
-            echo "##vso[task.setvariable variable=AWS.SecretAccessKey]$AWS_SECRET_ACCESS_KEY"
-            echo "##vso[task.setvariable variable=AWS.SessionToken]$AWS_SESSION_TOKEN" 
-              echo "##vso[task.setvariable variable=AWS.Region]${aws_default_region}"
+            echo "##vso[task.setvariable variable=AWS.AccessKeyID;issecret=true]$AWS_ACCESS_KEY_ID"
+            echo "##vso[task.setvariable variable=AWS.SecretAccessKey;issecret=true]$AWS_SECRET_ACCESS_KEY"
+            echo "##vso[task.setvariable variable=AWS.SessionToken;issecret=true]$AWS_SESSION_TOKEN" 
+            echo "##vso[task.setvariable variable=AWS.Region]${aws_default_region}"
             echo "Assumed role: $AWS_ACCESS_KEY_ID"
             echo "Assumed role: ${aws_execution_role_arn}"
 

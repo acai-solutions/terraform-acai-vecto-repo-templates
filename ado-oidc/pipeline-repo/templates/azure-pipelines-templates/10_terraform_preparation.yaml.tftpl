@@ -68,9 +68,9 @@ stages:
               # Read the credentials into separate variables
               read ASSUMED_ACCESS_KEY_ID ASSUMED_SECRET_ACCESS_KEY ASSUMED_SESSION_TOKEN <<< "$ASSUMED_LEVEL0_ROLE"
 
-              echo "##vso[task.setvariable variable=AWS.AccessKeyID]$ASSUMED_ACCESS_KEY_ID"
-              echo "##vso[task.setvariable variable=AWS.SecretAccessKey]$ASSUMED_SECRET_ACCESS_KEY"
-              echo "##vso[task.setvariable variable=AWS.SessionToken]$ASSUMED_SESSION_TOKEN" 
+              echo "##vso[task.setvariable variable=AWS.AccessKeyID;issecret=true]$AWS_ACCESS_KEY_ID"
+              echo "##vso[task.setvariable variable=AWS.SecretAccessKey;issecret=true]$AWS_SECRET_ACCESS_KEY"
+              echo "##vso[task.setvariable variable=AWS.SessionToken;issecret=true]$AWS_SESSION_TOKEN" 
               echo "##vso[task.setvariable variable=AWS.Region]${aws_default_region}"
               echo "Assumed role: $ASSUMED_ACCESS_KEY_ID"
               echo "Assumed role: ${aws_execution_role_arn}"
