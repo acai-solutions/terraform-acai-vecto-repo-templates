@@ -110,10 +110,31 @@ stages:
             cd terraform 
             terraform apply --auto-approve terraform.tfplan
 
+      # ---------------------------------------------------------------------
+      # Cleanup git credential state on the agent.
+      #
+      # Why this matters:
+      #   On self-hosted / persistent agents, $HOME/.gitconfig survives across
+      #   pipeline runs. Any 'http.<url>.extraheader' (set by checkout with
+      #   persistCredentials=true) or 'url.<...>.insteadOf' rewrites containing
+      #   tokens would leak to subsequent jobs on the same agent.
+      #   On Microsoft-hosted agents the VM is ephemeral, so this is defensive
+      #   only — but cheap, idempotent, and runs unconditionally.
+      #
+      # Scope cleaned here:
+      #   1. extraheader for the ADO project this pipeline runs in
+      #      (set implicitly by 'checkout: self' + persistCredentials).
+      #   2. Any insteadOf rewrites targeting the ADO project's domain.
+      #   3. Any insteadOf rewrites targeting cross-org domains used by
+      #      PAT-based repo access (set in stage 10; cleaned here as a
+      #      safety net in case stage 10 didn't reach its own cleanup).
+      # ---------------------------------------------------------------------
       - bash: |
+          set +e  # never fail the pipeline on cleanup errors
           git config --global --unset-all http.https://dev.azure.com/${ado_project_name}/.extraheader || true
           git config --global --get-regexp '^url\..*dev\.azure\.com/${ado_project_name}/.*insteadOf$' | awk '{print $1}' | xargs -r -I{} git config --global --unset-all "{}" || true
 %{ for entry in jsondecode(pat_repo_access) ~}
+          # Cleanup PAT-based insteadOf for ${entry.repo_domain} (registered in stage 10)
           git config --global --get-regexp '^url\..*dev\.azure\.com/${entry.repo_domain}/.*insteadOf$' | awk '{print $1}' | xargs -r -I{} git config --global --unset-all "{}" || true
 %{ endfor ~}
         displayName: "Cleanup Git credential headers"

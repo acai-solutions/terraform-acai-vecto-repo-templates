@@ -139,10 +139,30 @@ stages:
           targetPath: 'terraform_folder.zip' 
           artifactName: 'terraform_folder.zip'
 
+      # ---------------------------------------------------------------------
+      # Cleanup git credential state on the agent.
+      #
+      # Why this matters:
+      #   On self-hosted / persistent agents, $HOME/.gitconfig survives across
+      #   pipeline runs. The 'http.<url>.extraheader' set by checkout (via
+      #   persistCredentials=true) and the 'url.<...>.insteadOf' rewrites we
+      #   register above for PAT-based cross-repo access embed secrets that
+      #   must not bleed into subsequent jobs on the same agent.
+      #   On Microsoft-hosted agents the VM is ephemeral, so this is defensive
+      #   only — but cheap, idempotent, and runs unconditionally.
+      #
+      # Scope cleaned here:
+      #   1. extraheader for the ADO project this pipeline runs in.
+      #   2. Any insteadOf rewrites targeting the ADO project's domain.
+      #   3. The exact PAT-based insteadOf entries registered above
+      #      (matched both by exact URL and by domain regex as a safety net).
+      # ---------------------------------------------------------------------
       - bash: |
+          set +e  # never fail the pipeline on cleanup errors
           git config --global --unset-all http.https://dev.azure.com/${ado_project_name}/.extraheader || true
           git config --global --get-regexp '^url\..*dev\.azure\.com/${ado_project_name}/.*insteadOf$' | awk '{print $1}' | xargs -r -I{} git config --global --unset-all "{}" || true
 %{ for entry in jsondecode(pat_repo_access) ~}
+          # Cleanup PAT-based insteadOf for ${entry.repo_domain}
           git config --global --unset-all url."https://$${REPO_ACCESS_${entry.pat_variable_name}}@dev.azure.com/${entry.repo_domain}/".insteadOf || true
           git config --global --get-regexp '^url\..*dev\.azure\.com/${entry.repo_domain}/.*insteadOf$' | awk '{print $1}' | xargs -r -I{} git config --global --unset-all "{}" || true
 %{ endfor ~}
